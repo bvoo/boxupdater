@@ -5,13 +5,40 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tauri::Window;
 use futures_util::StreamExt;
 use reqwest::Client;
 use tauri::Emitter;
+use std::sync::Mutex;
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
 
-#[derive(Serialize, Deserialize)]
+// Cache structures
+struct CacheEntry<T> {
+    data: T,
+    expires_at: SystemTime,
+}
+
+impl<T> CacheEntry<T> {
+    fn new(data: T, ttl: Duration) -> Self {
+        Self {
+            data,
+            expires_at: SystemTime::now() + ttl,
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        SystemTime::now() > self.expires_at
+    }
+}
+
+static RELEASES_CACHE: Lazy<Mutex<HashMap<String, CacheEntry<Vec<Release>>>>> = 
+    Lazy::new(|| Mutex::new(HashMap::new()));
+static REPOSITORIES_CACHE: Lazy<Mutex<Option<CacheEntry<Vec<Repository>>>>> = 
+    Lazy::new(|| Mutex::new(None));
+
+#[derive(Serialize, Deserialize, Clone)]
 struct Repository {
     name: String,
     owner: String,
@@ -24,7 +51,7 @@ struct Config {
     repositories: Vec<Repository>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Release {
     name: String,
     tag_name: String,
@@ -50,14 +77,48 @@ struct DownloadProgress {
 
 #[tauri::command]
 async fn get_repositories() -> Result<Vec<Repository>, String> {
+    const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes cache
+    
+    // Check cache first
+    {
+        let cache = REPOSITORIES_CACHE.lock().unwrap();
+        if let Some(entry) = cache.as_ref() {
+            if !entry.is_expired() {
+                return Ok(entry.data.clone());
+            }
+        }
+    }
+    
+    // Cache miss or expired, fetch fresh data
     let config_str = include_str!("./repositories.json");
     let config: Config =
         serde_json::from_str(config_str).map_err(|e| format!("Failed to parse config: {}", e))?;
-    Ok(config.repositories)
+    
+    // Update cache
+    let repositories = config.repositories.clone();
+    {
+        let mut cache = REPOSITORIES_CACHE.lock().unwrap();
+        *cache = Some(CacheEntry::new(repositories.clone(), CACHE_TTL));
+    }
+    
+    Ok(repositories)
 }
 
 #[tauri::command]
 async fn get_releases(repo_name: String) -> Result<Vec<Release>, String> {
+    const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes cache
+    
+    // Check cache first
+    {
+        let cache = RELEASES_CACHE.lock().unwrap();
+        if let Some(entry) = cache.get(&repo_name) {
+            if !entry.is_expired() {
+                return Ok(entry.data.clone());
+            }
+        }
+    }
+
+    // Cache miss or expired, fetch fresh data
     let config_str = include_str!("./repositories.json");
     let config: Config =
         serde_json::from_str(config_str).map_err(|e| format!("Failed to parse config: {}", e))?;
@@ -86,7 +147,7 @@ async fn get_releases(repo_name: String) -> Result<Vec<Release>, String> {
     let regex = regex::Regex::new(&repo.asset_filter)
         .map_err(|e| format!("Invalid asset filter regex: {}", e))?;
 
-    Ok(releases
+    let results: Vec<Release> = releases
         .into_iter()
         .flat_map(|release| {
             release
@@ -99,7 +160,15 @@ async fn get_releases(repo_name: String) -> Result<Vec<Release>, String> {
                     browser_download_url: asset.browser_download_url,
                 })
         })
-        .collect())
+        .collect();
+
+    // Update cache
+    {
+        let mut cache = RELEASES_CACHE.lock().unwrap();
+        cache.insert(repo_name, CacheEntry::new(results.clone(), CACHE_TTL));
+    }
+
+    Ok(results)
 }
 
 #[tauri::command]
