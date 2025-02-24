@@ -1,0 +1,32 @@
+[package]
+name = "boxupdater"
+version = "0.1.0"
+description = "An RP2040 controller updater."
+authors = ["bvoo"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "boxupdater_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.36.0", features = ["full"] }
+reqwest = { version = "0.11.24", features = ["json", "stream"] }
+futures-util = "0.3"
+anyhow = "1.0.80"
+regex = "1.10.3"
+winapi = { version = "0.3.9", features = ["winuser", "fileapi"] }
+tauri-plugin-fs = "2"
+tauri-plugin-http = "2.3.0"

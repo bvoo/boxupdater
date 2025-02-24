@@ -1,0 +1,42 @@
+{
+  "name": "boxupdater",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "lint": "biome check .",
+    "lint:fix": "biome check --apply .",
+    "format": "biome format . && cd src-tauri && cargo fmt --check",
+    "format:fix": "biome format --write . && cd src-tauri && cargo fmt"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.0.7",
+    "@tanstack/vue-table": "^8.21.2",
+    "@tauri-apps/api": "2.0.0-beta.4",
+    "@tauri-apps/plugin-fs": "~2.2.0",
+    "@tauri-apps/plugin-http": "~2.3.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-vue-next": "^0.475.0",
+    "radix-vue": "^1.9.16",
+    "reka-ui": "^2.0.0",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "vue": "^3.3.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@tauri-apps/cli": "^2.0.0-beta.0",
+    "@types/node": "^22.13.4",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "@vueuse/core": "^12.7.0",
+    "tailwindcss": "^4.0.7",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.0",
+    "vue-tsc": "^2.2.2"
+  }
+}
