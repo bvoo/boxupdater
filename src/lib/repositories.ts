@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { useRepositoryStore } from '../stores/repository'
 
 export interface Release {
   name: string
@@ -14,9 +14,27 @@ export interface Repository {
 }
 
 export async function fetchReleasesByRepo(repoName: string): Promise<Release[]> {
-  return invoke('get_releases', { repoName })
-}
+  const store = useRepositoryStore()
+  const repo = store.repositories.find(r => r.name === repoName)
+  if (!repo) throw new Error('Repository not found')
 
-export async function getRepositories(): Promise<Repository[]> {
-  return invoke('get_repositories')
+  const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/releases`
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'boxupdater'
+    }
+  })
+  
+  const releases = await response.json()
+  const regex = new RegExp(repo.asset_filter)
+
+  return releases.flatMap((release: any) => 
+    release.assets
+      .filter((asset: any) => regex.test(asset.name))
+      .map((asset: any) => ({
+        name: asset.name,
+        tag_name: release.tag_name,
+        browser_download_url: asset.browser_download_url
+      }))
+  )
 }

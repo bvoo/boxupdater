@@ -22,6 +22,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-vue-next": "^0.475.0",
+    "pinia": "^3.0.1",
     "radix-vue": "^1.9.16",
     "reka-ui": "^2.0.0",
     "tailwind-merge": "^3.0.1",

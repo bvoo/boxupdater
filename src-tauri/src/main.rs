@@ -1,174 +1,18 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::{Deserialize, Serialize};
+use futures_util::StreamExt;
+use reqwest::Client;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 use std::thread;
-use std::time::{Duration, SystemTime};
-use tauri::Window;
-use futures_util::StreamExt;
-use reqwest::Client;
-use tauri::Emitter;
-use std::sync::Mutex;
-use std::collections::HashMap;
-use once_cell::sync::Lazy;
-
-// Cache structures
-struct CacheEntry<T> {
-    data: T,
-    expires_at: SystemTime,
-}
-
-impl<T> CacheEntry<T> {
-    fn new(data: T, ttl: Duration) -> Self {
-        Self {
-            data,
-            expires_at: SystemTime::now() + ttl,
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        SystemTime::now() > self.expires_at
-    }
-}
-
-static RELEASES_CACHE: Lazy<Mutex<HashMap<String, CacheEntry<Vec<Release>>>>> = 
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static REPOSITORIES_CACHE: Lazy<Mutex<Option<CacheEntry<Vec<Repository>>>>> = 
-    Lazy::new(|| Mutex::new(None));
-
-#[derive(Serialize, Deserialize, Clone)]
-struct Repository {
-    name: String,
-    owner: String,
-    description: String,
-    asset_filter: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Config {
-    repositories: Vec<Repository>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct Release {
-    name: String,
-    tag_name: String,
-    browser_download_url: String,
-}
-
-#[derive(Deserialize)]
-struct GithubAsset {
-    name: String,
-    browser_download_url: String,
-}
-
-#[derive(Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-    assets: Vec<GithubAsset>,
-}
+use std::time::Duration;
+use tauri::{Emitter, Window};
 
 #[derive(Clone, Serialize)]
 struct DownloadProgress {
     progress: u32,
-}
-
-#[tauri::command]
-async fn get_repositories() -> Result<Vec<Repository>, String> {
-    const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes cache
-    
-    // Check cache first
-    {
-        let cache = REPOSITORIES_CACHE.lock().unwrap();
-        if let Some(entry) = cache.as_ref() {
-            if !entry.is_expired() {
-                return Ok(entry.data.clone());
-            }
-        }
-    }
-    
-    // Cache miss or expired, fetch fresh data
-    let config_str = include_str!("./repositories.json");
-    let config: Config =
-        serde_json::from_str(config_str).map_err(|e| format!("Failed to parse config: {}", e))?;
-    
-    // Update cache
-    let repositories = config.repositories.clone();
-    {
-        let mut cache = REPOSITORIES_CACHE.lock().unwrap();
-        *cache = Some(CacheEntry::new(repositories.clone(), CACHE_TTL));
-    }
-    
-    Ok(repositories)
-}
-
-#[tauri::command]
-async fn get_releases(repo_name: String) -> Result<Vec<Release>, String> {
-    const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes cache
-    
-    // Check cache first
-    {
-        let cache = RELEASES_CACHE.lock().unwrap();
-        if let Some(entry) = cache.get(&repo_name) {
-            if !entry.is_expired() {
-                return Ok(entry.data.clone());
-            }
-        }
-    }
-
-    // Cache miss or expired, fetch fresh data
-    let config_str = include_str!("./repositories.json");
-    let config: Config =
-        serde_json::from_str(config_str).map_err(|e| format!("Failed to parse config: {}", e))?;
-
-    let repo = config
-        .repositories
-        .into_iter()
-        .find(|r| r.name == repo_name)
-        .ok_or_else(|| "Repository not found".to_string())?;
-
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/releases",
-        repo.owner, repo.name
-    );
-
-    let client = reqwest::Client::new();
-    let response = client
-        .get(&url)
-        .header("User-Agent", "boxupdater")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let releases: Vec<GithubRelease> = response.json().await.map_err(|e| e.to_string())?;
-
-    let regex = regex::Regex::new(&repo.asset_filter)
-        .map_err(|e| format!("Invalid asset filter regex: {}", e))?;
-
-    let results: Vec<Release> = releases
-        .into_iter()
-        .flat_map(|release| {
-            release
-                .assets
-                .into_iter()
-                .filter(|asset| regex.is_match(&asset.name))
-                .map(move |asset| Release {
-                    name: asset.name,
-                    tag_name: release.tag_name.clone(),
-                    browser_download_url: asset.browser_download_url,
-                })
-        })
-        .collect();
-
-    // Update cache
-    {
-        let mut cache = RELEASES_CACHE.lock().unwrap();
-        cache.insert(repo_name, CacheEntry::new(results.clone(), CACHE_TTL));
-    }
-
-    Ok(results)
 }
 
 #[tauri::command]
@@ -187,7 +31,8 @@ async fn write_to_rp2(is_nuke: bool, file_data: Option<Vec<u8>>) -> Result<(), S
         while find_rp2_drive().is_some() {
             thread::sleep(Duration::from_millis(500));
             check_attempts += 1;
-            if check_attempts > 20 { // 10 second timeout
+            if check_attempts > 20 {
+                // 10 second timeout
                 return Err("Device did not disconnect after flashing".to_string());
             }
         }
@@ -198,13 +43,14 @@ async fn write_to_rp2(is_nuke: bool, file_data: Option<Vec<u8>>) -> Result<(), S
         // Write the actual firmware
         fs::write(&drives.join("firmware.uf2"), firmware_data)
             .map_err(|e| format!("Failed to write firmware: {}", e))?;
-        
+
         // Start checking if drive disappears
         let mut check_attempts = 0;
         while find_rp2_drive().is_some() {
             thread::sleep(Duration::from_millis(500));
             check_attempts += 1;
-            if check_attempts > 20 { // 10 second timeout
+            if check_attempts > 20 {
+                // 10 second timeout
                 return Err("Device did not disconnect after flashing".to_string());
             }
         }
@@ -226,10 +72,11 @@ async fn download_firmware(window: Window, url: String) -> Result<Vec<u8>, Strin
         let chunk = chunk.map_err(|e| e.to_string())?;
         buffer.extend_from_slice(&chunk);
         downloaded += chunk.len() as u64;
-        
+
         if total_size > 0 {
             let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u32;
-            let _ = window.emit_to("main", "download-progress", DownloadProgress { progress })
+            let _ = window
+                .emit("download-progress", DownloadProgress { progress })
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -275,7 +122,7 @@ fn find_rp2_drive() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         use std::process::Command;
-        
+
         // Check common mount points
         if let Ok(user) = std::env::var("USER") {
             let mount_points = vec![
@@ -283,7 +130,7 @@ fn find_rp2_drive() -> Option<PathBuf> {
                 format!("/run/media/{}/RPI-RP2", user),
                 "/mnt/RPI-RP2".to_string(),
             ];
-            
+
             // First try direct path checks
             for mount_point in mount_points {
                 let path = PathBuf::from(&mount_point);
@@ -393,9 +240,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             write_to_rp2,
             download_firmware,
-            get_repositories,
-            get_releases,
-            check_rp2_drive
+            check_rp2_drive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

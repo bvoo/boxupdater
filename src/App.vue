@@ -10,11 +10,20 @@ import {
   TableRow 
 } from './components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs'
-import { fetchReleasesByRepo, getRepositories, type Repository, type Release } from './lib/repositories'
+import { fetchReleasesByRepo, type Release } from './lib/repositories'
 import StatusBar from './components/ui/StatusBar.vue'
 import Skeleton from './components/ui/skeleton/Skeleton.vue'
+import { XIcon, PlusIcon } from 'lucide-vue-next'
+import {
+  PopoverRoot,
+  PopoverContent,
+  PopoverTrigger,
+} from 'reka-ui'
+import { useRepositoryStore } from './stores/repository'
 
-const repositories = ref<Repository[]>([])
+const store = useRepositoryStore()
+const repositories = computed(() => store.repositories)
+
 const selectedRepoId = ref<string>('')
 const releases = ref<Release[]>([])
 const selectedVersion = ref<string>('')
@@ -24,6 +33,10 @@ const selectedFileUrl = ref<string>('')
 const downloadProgress = ref(0)
 const isFlashing = ref(false)
 const nukeBeforeFlash = ref(true)
+
+const showAddRepo = ref(false)
+const newRepoUrl = ref('')
+const repoUrlError = ref('')
 
 const selectedRepo = computed(() => {
   return repositories.value.find(r => r.name === selectedRepoId.value)
@@ -48,9 +61,8 @@ const selectedReleases = computed(() => {
 
 async function loadRepositories() {
   try {
-    repositories.value = await getRepositories()
-    if (repositories.value.length > 0) {
-      selectedRepoId.value = repositories.value[0].name
+    if (store.repositories.length > 0) {
+      selectedRepoId.value = store.repositories[0].name
       await fetchReleases() // Fetch releases for the initial repository
     }
   } catch (error) {
@@ -128,6 +140,61 @@ async function flashDevice() {
   }
 }
 
+async function addCustomRepository() {
+  try {
+    repoUrlError.value = ''
+    const parsed = parseGithubUrl(newRepoUrl.value)
+    if (!parsed) {
+      repoUrlError.value = 'Invalid GitHub URL'
+      return
+    }
+
+    store.addRepository({
+      owner: parsed.owner,
+      name: parsed.name,
+      description: parsed.name,
+      asset_filter: "\\.uf2$",
+    })
+
+    await loadRepositories()
+    showAddRepo.value = false
+    newRepoUrl.value = ''
+  } catch (error) {
+    status.value = 'Error adding repository'
+    console.error(error)
+  }
+}
+
+async function removeRepository(name: string) {
+  try {
+    store.removeRepository(name)
+    if (selectedRepoId.value === name) {
+      selectedRepoId.value = repositories.value[0]?.name || ''
+    }
+    await loadRepositories()
+  } catch (error) {
+    status.value = 'Error removing repository'
+    console.error(error)
+  }
+}
+
+function parseGithubUrl(url: string): { owner: string, name: string } | null {
+  try {
+    const urlObj = new URL(url)
+    if (urlObj.hostname !== 'github.com') return null
+    
+    const parts = urlObj.pathname.split('/').filter(Boolean)
+    if (parts.length < 2) return null
+    
+    return {
+      owner: parts[0],
+      name: parts[1]
+    }
+  } catch {
+    return null
+  }
+}
+
 watch(selectedRepo, () => {
   selectedVersion.value = ''
   fetchReleases()
@@ -142,8 +209,8 @@ onMounted(async () => {
   
   // Listen for download progress updates, scaling from 33-66%
   await listen('download-progress', (event) => {
-    const rawProgress = event.payload as number
-    downloadProgress.value = 33 + (rawProgress * 0.33) // Scale progress to range 33-66
+    const rawProgress = event.payload as DownloadProgress
+    downloadProgress.value = 33 + (rawProgress.progress * 0.33) // Scale progress to range 33-66
   })
 
   // Set up periodic drive check
@@ -162,6 +229,10 @@ onMounted(async () => {
     }
   }, 500)
 })
+
+interface DownloadProgress {
+  progress: number
+}
 </script>
 
 <template>
@@ -177,7 +248,7 @@ onMounted(async () => {
       <div class="py-2">
         <div class="flex justify-center items-center gap-4">
           <Tabs v-model="selectedRepoId" class="w-fit">
-            <TabsList class="flex bg-transparent overflow-x-auto hide-scrollbar">
+            <TabsList class="flex overflow-x-auto hide-scrollbar">
               <template v-if="loading && repositories.length === 0">
                 <div v-for="i in 3" :key="i" class="flex items-center gap-1">
                   <Skeleton class="h-9 w-[120px] mx-0.5" />
@@ -190,10 +261,57 @@ onMounted(async () => {
                 :key="repo.name"
                 :value="repo.name"
                 :title="repo.description"
-                class="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground hover:bg-primary/10 transition-colors h-9 px-4 flex items-center whitespace-nowrap"
+                class="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground hover:bg-primary/10 transition-colors h-9 px-4 flex items-center gap-2 whitespace-nowrap relative"
               >
-                {{ repo.name }}
+                <span class="transition-all" :class="{
+                  'pr-6': repo.name === selectedRepoId,
+                  'text-center w-full': repo.name !== selectedRepoId
+                }">{{ repo.name }}</span>
+                <button 
+                  v-show="repo.name === selectedRepoId"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400/80 hover:text-red-500 transition-colors"
+                  @click.stop="removeRepository(repo.name)"
+                  :title="'Remove repository'"
+                >
+                  <XIcon class="h-4 w-4" />
+                </button>
               </TabsTrigger>
+              <PopoverRoot v-model:open="showAddRepo">
+                <PopoverTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    class="h-9 w-9 hover:bg-[#0a0a0a]/40 flex items-center justify-center"
+                    title="Add custom repository"
+                  >
+                    <PlusIcon class="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent 
+                  class="popup-content w-[400px] p-4 rounded-md border border-[#3f3f46] !bg-[#0c0c0c] shadow-md z-10"
+                  side="bottom"
+                  align="end"
+                  :sideOffset="5"
+                  @close="showAddRepo = false"
+                >
+                  <h2 class="text-xl font-bold mb-4">Add Custom Repository</h2>
+                  <form @submit.prevent="addCustomRepository" class="space-y-4">
+                    <div>
+                      <label class="block text-sm mb-1">GitHub Repository URL</label>
+                      <input 
+                        v-model="newRepoUrl" 
+                        class="w-full p-2 rounded bg-[#27272a] border border-[#3f3f46] focus:outline-none focus:ring-1 focus:ring-[#9400f0]" 
+                        placeholder="https://github.com/owner/repository"
+                        required
+                      >
+                      <p v-if="repoUrlError" class="text-red-500 text-sm mt-1">{{ repoUrlError }}</p>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-6">
+                      <Button variant="outline" type="button" @click="showAddRepo = false">Cancel</Button>
+                      <Button type="submit">Add Repository</Button>
+                    </div>
+                  </form>
+                </PopoverContent>
+              </PopoverRoot>
             </TabsList>
           </Tabs>
 
@@ -214,7 +332,7 @@ onMounted(async () => {
       <div class="flex flex-col flex-1 overflow-hidden">
         <Tabs v-model="selectedVersion" class="w-full py-2">
           <div class="w-full flex justify-center">
-            <TabsList class="w-fit h-fit flex flex-wrap gap-1 bg-transparent">
+            <TabsList class="w-fit h-fit flex flex-wrap gap-1">
               <template v-if="loading">
                 <div v-for="i in 4" :key="i" class="flex items-center gap-1">
                   <Skeleton class="h-9 w-[100px] mx-0.5" />
@@ -287,6 +405,46 @@ onMounted(async () => {
 
 <style>
 @import "tailwindcss";
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideOutToTop {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+[data-state="open"].popup-content {
+  animation: fadeIn 120ms ease-out, slideInFromTop 120ms ease-out;
+}
+
+[data-state="closed"].popup-content {
+  animation: fadeOut 120ms ease-in, slideOutToTop 120ms ease-in;
+}
 
 /* Custom scrollbar styling */
 *::-webkit-scrollbar {
