@@ -63,7 +63,9 @@ const firmwareVersions = computed(() => {
 
 const selectedReleases = computed(() => {
   if (!selectedVersion.value) return []
-  return releases.value.filter(r => r.tag_name === selectedVersion.value)
+  return releases.value
+    .filter(r => r.tag_name === selectedVersion.value)
+    .sort((a, b) => b.download_count - a.download_count)
 })
 
 async function loadRepositories() {
@@ -246,12 +248,12 @@ interface DownloadProgress {
 <template>
   <div class="grid grid-rows-[auto_1fr_auto] h-screen bg-background text-foreground overflow-hidden">
     <!-- Header -->
-    <div class="max-w-4xl w-full mx-auto px-5 py-2">
-      <h1 class="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">Box Updater</h1>
+    <div class="max-w-[1600px] w-full mx-auto px-5 py-2">
+      <h1 class="scroll-m-20 text-4xl font-extrabold tracking-tight">Box Updater</h1>
     </div>
 
     <!-- Main content -->
-    <div class="max-w-4xl w-full mx-auto px-5 flex flex-col overflow-hidden">
+    <div class="max-w-[1600px] w-full mx-auto px-5 flex flex-col overflow-hidden">
       <!-- Repository tabs -->
       <div class="py-2">
         <div class="flex justify-center items-center gap-4">

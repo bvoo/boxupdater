@@ -37,7 +37,7 @@ const currentStepIndex = computed(() => {
 
 <template>
   <div class="fixed bottom-0 left-0 right-0 bg-[#0C0C0D] border-t border-[#3f3f46] p-4">
-    <div class="max-w-4xl mx-auto flex items-center justify-between gap-4">
+    <div class="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
       <!-- Status text on the left -->
       <div class="text-sm whitespace-nowrap">{{ currentStatus || 'Ready' }}</div>
 
