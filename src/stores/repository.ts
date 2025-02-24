@@ -19,7 +19,7 @@ const DEFAULT_REPOSITORIES: Repository[] = [
   },
   {
     name: "pico-rectangle",
-    displayName: "pico-rectangle",
+    displayName: "Pico Rectangle",
     owner: "JulienBernard3383279",
     description: "Pico Rectangle",
     asset_filter: "\\.uf2$",
@@ -58,8 +58,6 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   function addRepository(repository: Repository) {
-    const baseDisplayName = repository.name
-
     // Find repositories with the same base name
     const sameNameRepos = repositories.value.filter(r => r.name === repository.name)
     

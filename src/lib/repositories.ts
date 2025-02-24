@@ -4,6 +4,8 @@ export interface Release {
   name: string
   tag_name: string
   browser_download_url: string
+  download_count: number
+  uploaded_at: string
 }
 
 export interface Repository {
@@ -35,7 +37,9 @@ export async function fetchReleasesByRepo(repoName: string): Promise<Release[]> 
       .map((asset: any) => ({
         name: asset.name,
         tag_name: release.tag_name,
-        browser_download_url: asset.browser_download_url
+        browser_download_url: asset.browser_download_url,
+        download_count: asset.download_count,
+        uploaded_at: asset.created_at
       }))
   )
 }

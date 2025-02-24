@@ -43,15 +43,22 @@ const selectedRepo = computed(() => {
 })
 
 const firmwareVersions = computed(() => {
-  const versions = new Set<string>()
+  // Create a map of version to most recent upload date for that version
+  const versionDates = new Map<string, string>()
   for (const release of releases.value) {
-    versions.add(release.tag_name)
+    const existingDate = versionDates.get(release.tag_name)
+    if (!existingDate || release.uploaded_at > existingDate) {
+      versionDates.set(release.tag_name, release.uploaded_at)
+    }
   }
-  return Array.from(versions).sort((a, b) => {
-    const versionA = a.replace(/^v/, '')
-    const versionB = b.replace(/^v/, '')
-    return versionB.localeCompare(versionA, undefined, { numeric: true })
-  })
+
+  // Convert to array and sort by date
+  return Array.from(versionDates.keys())
+    .sort((a, b) => {
+      const dateA = versionDates.get(a) || ''
+      const dateB = versionDates.get(b) || ''
+      return dateB.localeCompare(dateA) // Most recent first
+    })
 })
 
 const selectedReleases = computed(() => {
@@ -360,12 +367,15 @@ interface DownloadProgress {
               <TableBody>
                 <template v-if="loading">
                   <TableRow v-for="i in 5" :key="i" class="hover:bg-[#27272a]/50">
-                    <TableCell class="w-full py-4">
-                      <div class="flex items-center justify-between">
-                        <div class="space-y-2">
-                          <Skeleton class="h-5 w-[280px]" />
-                          <Skeleton class="h-4 w-[180px] opacity-50" />
-                        </div>
+                    <TableCell class="w-[60%]">
+                      <div class="space-y-1">
+                        <Skeleton class="h-5 w-[280px]" />
+                        <Skeleton class="h-4 w-[100px]" />
+                      </div>
+                    </TableCell>
+                    <TableCell class="text-right">
+                      <div class="flex items-center justify-end gap-4">
+                        <Skeleton class="h-4 w-[80px]" />
                         <Skeleton class="h-9 w-[90px]" />
                       </div>
                     </TableCell>
@@ -373,15 +383,27 @@ interface DownloadProgress {
                 </template>
                 <template v-else-if="selectedReleases.length > 0">
                   <TableRow v-for="release in selectedReleases" :key="release.name">
-                    <TableCell class="font-medium">{{ release.name }}</TableCell>
+                    <TableCell class="w-[60%]">
+                      <div class="space-y-1">
+                        <div class="font-medium">{{ release.name }}</div>
+                        <div class="font-mono text-sm text-[#94a3b8]">
+                          {{ new Date(release.uploaded_at).toLocaleDateString() }}
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell class="text-right">
-                      <Button 
-                        :variant="selectedFileUrl === release.browser_download_url ? 'default' : 'outline'" 
-                        size="sm"
-                        @click="selectedFileUrl = release.browser_download_url"
-                      >
-                        {{ selectedFileUrl === release.browser_download_url ? 'Selected' : 'Select' }}
-                      </Button>
+                      <div class="flex items-center justify-end gap-4">
+                        <span class="font-mono text-sm text-[#94a3b8]">
+                          {{ release.download_count.toLocaleString() }} downloads
+                        </span>
+                        <Button 
+                          :variant="selectedFileUrl === release.browser_download_url ? 'default' : 'outline'" 
+                          size="sm"
+                          @click="selectedFileUrl = release.browser_download_url"
+                        >
+                          {{ selectedFileUrl === release.browser_download_url ? 'Selected' : 'Select' }}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 </template>
