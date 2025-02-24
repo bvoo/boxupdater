@@ -52,7 +52,7 @@ const currentStepIndex = computed(() => {
       <!-- Flash button on the right -->
       <Button 
         @click="$emit('flash')" 
-        :disabled="loading || !canFlash || isWaitingForBootsel"
+        :disabled="loading || !canFlash || isWaitingForBootsel || currentStatus === 'Done!'"
         size="sm"
       >
         {{ loading ? 'Processing...' : 'Flash Device' }}

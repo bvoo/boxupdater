@@ -28,11 +28,13 @@ const selectedRepoId = ref<string>('')
 const releases = ref<Release[]>([])
 const selectedVersion = ref<string>('')
 const status = ref('Waiting for BOOTSEL')
-const loading = ref(false)
+const repoLoading = ref(false) // New ref for repository loading state
+const flashLoading = ref(false) // New ref for flash operation loading state
 const selectedFileUrl = ref<string>('')
 const downloadProgress = ref(0)
 const isFlashing = ref(false)
 const nukeBeforeFlash = ref(true)
+const isDoneStatus = ref(false)  // Add new ref to track Done status
 
 const showAddRepo = ref(false)
 const newRepoUrl = ref('')
@@ -84,7 +86,7 @@ async function fetchReleases() {
   if (!selectedRepo.value) return
   
   try {
-    loading.value = true
+    repoLoading.value = true
     status.value = 'Fetching releases...'
     releases.value = await fetchReleasesByRepo(selectedRepo.value.displayName)
     
@@ -99,7 +101,7 @@ async function fetchReleases() {
     status.value = 'Error fetching releases'
     console.error(error)
   } finally {
-    loading.value = false
+    repoLoading.value = false
   }
 }
 
@@ -110,15 +112,15 @@ async function flashDevice() {
   }
 
   try {
-    loading.value = true
+    flashLoading.value = true
     isFlashing.value = true
+    isDoneStatus.value = false
     
     status.value = 'Waiting for BOOTSEL'
     downloadProgress.value = 0
     status.value = 'Downloading firmware'
     downloadProgress.value = 33  // Start at 33%
     const fileData = await invoke('download_firmware', { url: selectedFileUrl.value })
-    // No need to set to 66 here as the events will handle it
     
     if (nukeBeforeFlash.value) {
       status.value = 'Nuking device'
@@ -134,18 +136,24 @@ async function flashDevice() {
     
     downloadProgress.value = 100
     status.value = 'Done!'
+    isDoneStatus.value = true
+
   } catch (error) {
     status.value = `Error: ${error}`
     console.error(error)
   } finally {
-    loading.value = false
+    flashLoading.value = false
+    // Single timeout to handle both Done status and cleanup
     setTimeout(() => {
-      downloadProgress.value = 0
-      isFlashing.value = false
       if (!status.value.includes('Error')) {
+        isDoneStatus.value = false
         status.value = 'Ready to flash'
       }
-    }, 1000)
+      downloadProgress.value = 0
+      isFlashing.value = false
+      // Ensure repositories are reloaded after flashing
+      fetchReleases()
+    }, 15000)
   }
 }
 
@@ -225,7 +233,8 @@ onMounted(async () => {
 
   // Set up periodic drive check
   setInterval(async () => {
-    if (!loading.value && !status.value.includes('Error')) {
+    // Only check drive status when not actively flashing or showing completion
+    if (!flashLoading.value && !status.value.includes('Error') && !isDoneStatus.value && !isFlashing.value) {
       try {
         const driveExists = await invoke('check_rp2_drive')
         if (!driveExists) {
@@ -259,7 +268,7 @@ interface DownloadProgress {
         <div class="flex justify-center items-center gap-4">
           <Tabs v-model="selectedRepoId" class="w-fit">
             <TabsList class="flex overflow-x-auto hide-scrollbar">
-              <template v-if="loading && repositories.length === 0">
+              <template v-if="repoLoading && repositories.length === 0">
                 <div v-for="i in 3" :key="i" class="flex items-center gap-1">
                   <Skeleton class="h-9 w-[120px] mx-0.5" />
                   <div v-if="i < 3" class="h-4 w-[1px] bg-[#27272a]" />
@@ -343,7 +352,7 @@ interface DownloadProgress {
         <Tabs v-model="selectedVersion" class="w-full py-2">
           <div class="w-full flex justify-center">
             <TabsList class="w-fit h-fit flex flex-wrap gap-1">
-              <template v-if="loading">
+              <template v-if="repoLoading">
                 <div v-for="i in 4" :key="i" class="flex items-center gap-1">
                   <Skeleton class="h-9 w-[100px] mx-0.5" />
                   <div v-if="i < 4" class="h-4 w-[1px] bg-[#27272a]" />
@@ -367,7 +376,7 @@ interface DownloadProgress {
           <div>
             <Table class="w-full">
               <TableBody>
-                <template v-if="loading">
+                <template v-if="repoLoading">
                   <TableRow v-for="i in 5" :key="i" class="hover:bg-[#27272a]/50">
                     <TableCell class="w-[60%]">
                       <div class="space-y-1">
@@ -420,7 +429,7 @@ interface DownloadProgress {
     <StatusBar 
       :current-status="status" 
       :download-progress="downloadProgress"
-      :loading="loading"
+      :loading="flashLoading"
       :can-flash="!!selectedFileUrl"
       :is-flashing="isFlashing"
       @flash="flashDevice"
