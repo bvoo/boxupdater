@@ -259,9 +259,57 @@ fn find_rp2_drive() -> Option<PathBuf> {
 
     #[cfg(unix)]
     {
-        // Unix implementation would go here
-        // Typically would look in /media/$USER/ or /mnt/
-        unimplemented!("Unix support not yet implemented");
+        use std::process::Command;
+        
+        // Check common mount points
+        let user = std::env::var("USER").unwrap_or_default();
+        let mount_points = vec![
+            format!("/media/{}/RPI-RP2", user),
+            format!("/run/media/{}/RPI-RP2", user),
+            "/mnt/RPI-RP2".to_string(),
+        ];
+
+        // First try direct path checks
+        for mount_point in mount_points {
+            let path = PathBuf::from(&mount_point);
+            if path.exists() && path.is_dir() {
+                return Some(path);
+            }
+        }
+
+        // If direct checks fail, try using blkid to find FAT filesystems
+        if let Ok(output) = Command::new("blkid")
+            .output()
+        {
+            if let Ok(output_str) = String::from_utf8(output.stdout) {
+                for line in output_str.lines() {
+                    if line.contains("TYPE=\"vfat\"") {
+                        // Get the device path
+                        if let Some(dev_path) = line.split(':').next() {
+                            // Try to find its mount point using findmnt
+                            if let Ok(mount_output) = Command::new("findmnt")
+                                .arg("-n")
+                                .arg("-o")
+                                .arg("TARGET")
+                                .arg(dev_path)
+                                .output()
+                            {
+                                if let Ok(mount_point) = String::from_utf8(mount_output.stdout) {
+                                    let mount_point = mount_point.trim();
+                                    if !mount_point.is_empty() {
+                                        let path = PathBuf::from(mount_point);
+                                        // Check if this looks like an RP2 drive
+                                        if path.join("INFO_UF2.TXT").exists() {
+                                            return Some(path);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     None
