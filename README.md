@@ -2,7 +2,7 @@
 
 A desktop application for easily updating RP2040-based controller firmware.
 
-https://github.com/bvoo/boxupdater/raw/main/.github/images/boxupdater.mp4
+https://github.com/user-attachments/assets/8b1a876b-e047-4a1d-bd07-34d37e5791a5
 
 ## Features
 
