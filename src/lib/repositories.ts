@@ -7,7 +7,8 @@ export interface Release {
 }
 
 export interface Repository {
-  name: string
+  name: string          // Original repository name
+  displayName: string   // Name shown in UI (with suffix if duplicate)
   owner: string
   description: string
   asset_filter: string
@@ -15,7 +16,7 @@ export interface Repository {
 
 export async function fetchReleasesByRepo(repoName: string): Promise<Release[]> {
   const store = useRepositoryStore()
-  const repo = store.repositories.find(r => r.name === repoName)
+  const repo = store.repositories.find(r => r.displayName === repoName)
   if (!repo) throw new Error('Repository not found')
 
   const url = `https://api.github.com/repos/${repo.owner}/${repo.name}/releases`

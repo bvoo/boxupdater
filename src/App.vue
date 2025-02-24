@@ -39,7 +39,7 @@ const newRepoUrl = ref('')
 const repoUrlError = ref('')
 
 const selectedRepo = computed(() => {
-  return repositories.value.find(r => r.name === selectedRepoId.value)
+  return repositories.value.find(r => r.displayName === selectedRepoId.value)
 })
 
 const firmwareVersions = computed(() => {
@@ -62,7 +62,7 @@ const selectedReleases = computed(() => {
 async function loadRepositories() {
   try {
     if (store.repositories.length > 0) {
-      selectedRepoId.value = store.repositories[0].name
+      selectedRepoId.value = store.repositories[0].displayName
       await fetchReleases() // Fetch releases for the initial repository
     }
   } catch (error) {
@@ -77,7 +77,7 @@ async function fetchReleases() {
   try {
     loading.value = true
     status.value = 'Fetching releases...'
-    releases.value = await fetchReleasesByRepo(selectedRepo.value.name)
+    releases.value = await fetchReleasesByRepo(selectedRepo.value.displayName)
     
     // Set the first version as default if there are any
     if (firmwareVersions.value.length > 0) {
@@ -152,6 +152,7 @@ async function addCustomRepository() {
     store.addRepository({
       owner: parsed.owner,
       name: parsed.name,
+      displayName: parsed.name,
       description: parsed.name,
       asset_filter: "\\.uf2$",
     })
@@ -258,19 +259,19 @@ interface DownloadProgress {
               <TabsTrigger 
                 v-else
                 v-for="repo in repositories" 
-                :key="repo.name"
-                :value="repo.name"
+                :key="repo.displayName"
+                :value="repo.displayName"
                 :title="repo.description"
                 class="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground hover:bg-primary/10 transition-colors h-9 px-4 flex items-center gap-2 whitespace-nowrap relative"
               >
                 <span class="transition-all" :class="{
-                  'pr-6': repo.name === selectedRepoId,
-                  'text-center w-full': repo.name !== selectedRepoId
-                }">{{ repo.name }}</span>
+                  'pr-6': repo.displayName === selectedRepoId,
+                  'text-center w-full': repo.displayName !== selectedRepoId
+                }">{{ repo.displayName }}</span>
                 <button 
-                  v-show="repo.name === selectedRepoId"
+                  v-show="repo.displayName === selectedRepoId"
                   class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400/80 hover:text-red-500 transition-colors"
-                  @click.stop="removeRepository(repo.name)"
+                  @click.stop="removeRepository(repo.displayName)"
                   :title="'Remove repository'"
                 >
                   <XIcon class="h-4 w-4" />
