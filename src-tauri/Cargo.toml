@@ -1,6 +1,6 @@
 [package]
 name = "boxupdater"
-version = "0.1.0"
+version = "0.1.1"
 description = "An RP2040 controller updater."
 authors = ["bvoo"]
 edition = "2021"
